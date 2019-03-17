@@ -30,20 +30,23 @@ class Conv(torch.nn.Module):
 # Much of this code was recycled from the wavenet github.
 #Repo is here: https://github.com/vincentherrmann/pytorch-wavenet
 class WaveNet(torch.nn.Module):
-    def __init__(self, n_layers, max_dilation, n_residual_channels, n_skip_channels, n_inputs, upsamp_window, upsamp_stride):
+    def __init__(self, n_channels, n_cond_channels, n_layers, max_dilation, n_residual_channels, n_skip_channels, n_inputs, upsamp_window, upsamp_stride):
 
         #Super
         super(WaveNet, self).__init__()
 
         #Build upsampleing for conditions.
-        self.upsample = torch.nn.ConvTranspose1d(1,1, upsamp_window, upsamp_stride)
+        self.upsample = torch.nn.ConvTranspose1d(n_cond_channels, n_cond_channels, upsamp_window, upsamp_stride)
 
         #Assign the parameters
         self.n_layers = n_layers
         self.max_dilation = max_dilation
         self.n_residual_channels = n_residual_channels
-        self.cond_layers = Conv(1,n_residual_channels*n_layers, w_init_gain='tanh')
+        self.cond_layers = Conv(n_cond_channels, n_residual_channels*n_layers, w_init_gain='tanh')
         self.n_inputs = n_inputs
+        self.n_channels = n_channels
+        self.n_cond_channels = n_cond_channels
+        self.n_skip_channels = n_skip_channels
 
         #Make layers
         self.dilate_layers = torch.nn.ModuleList()
@@ -52,14 +55,14 @@ class WaveNet(torch.nn.Module):
 
 
         #Was an embedding but we don't do this anymore.
-        self.casualInput = Conv(1, self.n_residual_channels, is_causal=True)
+        self.casualInput = Conv(self.n_channels, self.n_residual_channels, is_causal=True)
 
         #Final conv layers.
-        self.conv_out = Conv(n_skip_channels, 1, bias=False, w_init_gain='relu')
-        self.conv_end = Conv(1, 1, bias=False, w_init_gain='linear')
+        self.conv_out = Conv(self.n_skip_channels, self.n_channels, bias=False, w_init_gain='relu')
+        self.conv_end = Conv(self.n_channels, self.n_channels, bias=False, w_init_gain='linear')
 
         #Add out final linear layer.
-        self.final_linear = torch.nn.Linear(n_inputs, 1)
+        self.final_linear = torch.nn.Linear(self.n_inputs, 1)
 
         #Build the loop.
         loop_factor = math.floor(math.log2(max_dilation)) + 1
@@ -69,7 +72,7 @@ class WaveNet(torch.nn.Module):
             dilation = 2**(i % loop_factor)
 
             #Dilated Conv layer
-            d_layer = Conv(n_residual_channels, 2*n_residual_channels,kernel_size=2, dilation=dilation, w_init_gain='tanh', is_causal=True)
+            d_layer = Conv(n_residual_channels, 2*n_residual_channels, kernel_size=2, dilation=dilation, w_init_gain='tanh', is_causal=True)
             self.dilate_layers.append(d_layer)
 
             #We don't need a res layer on the last layer.
